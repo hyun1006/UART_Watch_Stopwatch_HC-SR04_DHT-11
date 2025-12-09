@@ -1,102 +1,155 @@
-# 🎛️ FPGA Integrated Smart System (Watch & Sensors)
+# 📡 FPGA Integrated UART Control System: Watch, Stopwatch & Sensors
 
-\<img src="[https://img.shields.io/badge/Language-Verilog-blue?style=for-the-badge\&logo=verilog](https://img.shields.io/badge/Language-Verilog-blue?style=for-the-badge&logo=verilog)" /\>
-\<img src="[https://img.shields.io/badge/Tool-Vivado-red?style=for-the-badge\&logo=xilinx](https://img.shields.io/badge/Tool-Vivado-red?style=for-the-badge&logo=xilinx)" /\>
-\<img src="[https://img.shields.io/badge/Board-Basys3-green?style=for-the-badge\&logo=fpga](https://img.shields.io/badge/Board-Basys3-green?style=for-the-badge&logo=fpga)" /\>
 
-**초음파/온습도 센서 모니터링과 디지털 타이머의 결합**<br>
-UART 통신을 통해 모든 기능을 PC에서 원격 제어하고 데이터를 수신하는 FPGA 통합 제어 시스템입니다.
+<img src="https://img.shields.io/badge/Device-Basys3 (Artix--7)-green?style=for-the-badge&logo=xilinx" />
+<img src="https://img.shields.io/badge/Language-Verilog_HDL-blue?style=for-the-badge&logo=verilog" />
+<img src="https://img.shields.io/badge/Tool-Vivado_202x-red?style=for-the-badge&logo=xilinx" />
+<img src="https://img.shields.io/badge/Protocol-UART_RS232-orange?style=for-the-badge" />
 
+**Dual-Mode Timing & Multi-Sensor Monitoring System**<br>
+FSM 기반의 정밀 타이밍 제어와 FIFO 버퍼링을 적용한 UART 비동기 통신 시스템 설계
+
+</div>
+
+---
+
+## 📋 1. 프로젝트 개요 (Overview)
+
+본 프로젝트는 **Xilinx Artix-7 FPGA (Basys 3)** 보드를 활용하여 디지털 시계, 스톱워치, 그리고 환경 센서(거리/온습도)를 통합 제어하는 임베디드 시스템입니다.
+단순한 하드웨어 제어를 넘어, **PC 터미널과의 UART 직렬 통신**을 통해 시스템을 원격 제어하고 데이터를 모니터링할 수 있도록 설계되었습니다. 특히 고속 데이터 입출력 시 안정성을 보장하기 위해 **Circular FIFO 구조**를 적용하여 데이터 유실 없는 통신 파이프라인을 구축했습니다.
+
+---
+
+## 🔧 2. 시스템 아키텍처 (System Architecture)
+
+### 2.1 하드웨어 블록 다이어그램 (H/W Block Diagram)
+전체 시스템은 크게 **입력 처리부(Input Processing)**, **코어 로직(Core Logic)**, **출력 제어부(Output Control)**로 구성됩니다.
+
+```mermaid
+graph TD
+    User[User / PC] -->|Tact Switch| Btn[Debounce Logic]
+    User -->|UART RX| FIFO_Rx[RX FIFO Buffer]
+    
+    Btn --> Control_Unit
+    FIFO_Rx -->|Command Decoding| Control_Unit[Main Control Unit]
+    
+    Control_Unit -->|Enable/Mode| Watch[Digital Watch Logic]
+    Control_Unit -->|Run/Stop/Clear| SW[Stopwatch Logic]
+    Control_Unit -->|Trigger| Sensor[Sensor Controller]
+    
+    Watch --> MUX[Display Mux]
+    SW --> MUX
+    Sensor --> MUX
+    
+    MUX -->|Dynamic Scanning| FND[7-Segment Display]
+    Sensor -->|Data Packet| FIFO_Tx[TX FIFO Buffer]
+    FIFO_Tx -->|UART TX| User
+````
+
+### 2.2 클럭 도메인 설계 (Clock Domain Design)
+
+시스템은 100MHz 메인 클럭을 분주하여 다양한 서브 클럭을 생성하여 사용합니다.
+
+  * **100 MHz:** 메인 시스템 클럭 (UART Baud Rate 생성용)
+  * **1 kHz:** 7-Segment Dynamic Scanning (잔상 효과 유도)
+  * **100 Hz:** 스톱워치 및 시계 카운팅 기준 (10ms Resolution)
+
+-----
+
+## 💻 3. 핵심 기술 및 구현 상세 (Technical Details)
+
+### 3.1 🛡️ UART 통신 및 FIFO 버퍼링 (Robust UART with FIFO)
+
+비동기 통신(Asynchronous Communication)의 특성상 발생할 수 있는 데이터 타이밍 불일치 문제를 해결하기 위해 \*\*FIFO(First-In First-Out)\*\*를 도입했습니다.
+
+  * **구조:** 8-bit Width, 4-Depth의 레지스터 기반 원형 큐(Circular Queue).
+  * **RX Path:** `UART_RX` 모듈이 수신 완료(`rx_done`) 신호를 보내면 데이터를 RX FIFO에 `Push`하고, 커맨드 유닛이 준비되었을 때 `Pop`하여 해석합니다.
+  * **TX Path:** 센서 데이터 전송 시 TX 모듈이 Busy 상태일 경우, 데이터를 TX FIFO에 대기시켜 데이터 손실(Data Loss)을 방지합니다.
+
+### 3.2 ⏱️ 유한 상태 머신 (FSM) 기반 스톱워치 제어
+
+스톱워치의 동작은 안정적인 상태 전이를 위해 **Moore Machine** 구조의 FSM으로 설계되었습니다.
+
+  * **States:**
+      * `STOP (2'b00)`: 카운팅 중지, 대기 상태.
+      * `RUN (2'b01)`: 10ms 단위로 Time Counter 증가.
+      * `CLEAR (2'b10)`: 레지스터 초기화 후 STOP 상태로 복귀.
+  * **Logic:** 물리 버튼(`Btn_R`, `Btn_L`)과 UART 명령어(`R`, `C`) 신호를 OR 연산으로 병합하여, 어느 입력으로든 상태 제어가 가능하도록 **하이브리드 입력 로직**을 구현했습니다.
+
+### 3.3 📟 다이내믹 디스플레이 (Dynamic Multiplexing)
+
+  * **Digit Splitter:** 2진수(Binary) 시간 데이터를 10진수(BCD)의 각 자릿수로 변환 (`% 10`, `/ 10` 연산 활용).
+  * **Scanning:** 4개의 Anode(`fnd_com`)를 1kHz 속도로 순차 점멸시켜, 시각적으로 4자리가 동시에 켜진 것처럼 보이게 구현했습니다.
+
+-----
+
+## 🎮 4. 사용자 인터페이스 (User Interface)
+
+### 4.1 UART 원격 제어 프로토콜
+
+PC 터미널(TeraTerm, PuTTY) 접속 정보: **Baud Rate 9600, Data 8-bit, Parity None, Stop 1-bit**
+
+| Command (ASCII) | Hex Code | Description | 동작 설명 |
+|:---:|:---:|:---|:---|
+| **M** | `0x4D` | **Mode Toggle** | 시계 ↔ 스톱워치 모드 전환 |
+| **R** | `0x52` | **Run / Stop** | 스톱워치 시작 및 정지 토글 |
+| **C** | `0x43` | **Clear** | 스톱워치 시간 초기화 (00:00) |
+| **h** | `0x68` | **Hour Adj** | 시계 시간(Hour) +1 증가 |
+| **m** | `0x6D` | **Min Adj** | 시계 분(Minute) +1 증가 |
+| **s** | `0x73` | **Sec Adj** | 시계 초(Second) +1 증가 |
+
+### 4.2 FPGA 물리 버튼 매핑 (Pin Assignment)
+
+`.xdc` 제약 파일에 정의된 I/O 매핑입니다.
+
+| Type | Pin Name | FPGA Pin | Function |
+|:---:|:---:|:---:|:---|
+| **Switch** | `sw[0]` | V17 | **System Enable** (Must be ON) |
+| **Switch** | `sw[1]` | V16 | Mode Select (0: SW, 1: Watch) |
+| **Button** | `Btn_R` | T17 | Stopwatch Run/Stop |
+| **Button** | `Btn_L` | W19 | Stopwatch Clear / Watch Hour+ |
+| **Button** | `Btn_U` | T18 | Watch Minute+ |
+| **Button** | `Btn_D` | U17 | Watch Second+ |
+| **Port** | `RsRx` | B18 | UART Receive (PC -\> FPGA) |
+| **Port** | `RsTx` | A18 | UART Transmit (FPGA -\> PC) |
+
+-----
+
+## 📂 5. 프로젝트 디렉토리 구조 (Directory Structure)
+
+```text
+📦 FPGA-Smart-Watch-Project
+ ┣ 📂 src
+ ┃ ┣ 📜 watch_stopwatch_top.v   # [Top] 최상위 모듈
+ ┃ ┣ 📜 w_sw_uart_top.v         # [Sub] UART 서브시스템 (RX/TX/FIFO 포함)
+ ┃ ┣ 📜 clock_top.v             # [Sub] 시계 및 스톱워치 로직 통합
+ ┃ ┣ 📜 stopwatch.v             # 스톱워치 모듈 (DP + CU)
+ ┃ ┣ 📜 watch.v                 # 디지털 시계 모듈
+ ┃ ┣ 📜 fifo.v                  # Circular FIFO 버퍼
+ ┃ ┣ 📜 uart_rx.v / uart_tx.v   # UART 드라이버
+ ┃ ┗ 📜 stopwatch_cu.v          # 스톱워치 FSM 제어기
+ ┣ 📂 sim
+ ┃ ┗ 📜 tb_test.v               # UART 커맨드 유닛 시뮬레이션 Testbench
+ ┗ 📂 constrs
+   ┗ 📜 Basys-3-Master.xdc      # 물리적 핀 매핑 제약 파일
+```
+
+-----
+
+## 🚀 6. 시작 가이드 (Getting Started)
+
+1.  **환경 설정:** Xilinx Vivado 설치 및 Digilent Basys 3 보드 드라이버 설정.
+2.  **프로젝트 생성:** Vivado에서 'RTL Project' 생성 후 `src` 폴더 내의 Verilog 파일 로드.
+3.  **핀 매핑:** `Basys-3-Master.xdc` 파일을 Constraints에 추가.
+4.  **합성 및 구현:** `Generate Bitstream` 실행 후 보드에 업로드.
+5.  **기능 확인:**
+      * **HW:** `sw[0]`을 켜고 버튼을 눌러 스톱워치 동작 확인.
+      * **SW:** PC 터미널을 열고 키보드 `M`, `R`, `C` 키를 입력하여 원격 제어 확인.
+
+-----
+
+\<i\>Developed with Passion for Digital Logic Design.\</i\>
 \</div\>
 
------
-
-## 📖 프로젝트 개요 (Project Overview)
-
-이 프로젝트는 **Xilinx FPGA**를 활용하여 **스마트 센서 계측(거리, 온습도)** 기능과 **정밀 타이밍(시계, 스톱워치)** 기능을 하나로 통합한 시스템입니다.
-[cite_start]물리적인 버튼 제어뿐만 아니라, **UART 시리얼 통신**을 통해 PC 터미널에서 모드를 전환하거나 스톱워치를 제어할 수 있습니다[cite: 161, 166]. [cite_start]안정적인 데이터 전송을 위해 **FIFO 버퍼링** 기술이 적용되었습니다[cite: 112].
-
------
-
-## 🚀 주요 기능 (Key Features)
-
-### 1️⃣ ⏱️ UART 디지털 시계 & 스톱워치 (Watch & Stopwatch)
-
-  * [cite_start]**Dual Mode:** 실시간 시계 모드(Watch)와 1/100초 정밀도의 스톱워치(Stopwatch) 모드를 지원하며, 실시간 전환이 가능합니다[cite: 80, 81, 169].
-  * [cite_start]**Remote Control:** PC 키보드 입력을 통해 시간 설정(시/분/초) 및 스톱워치 동작(Run/Stop/Clear)을 제어합니다[cite: 192].
-  * [cite_start]**Dynamic Display:** 4자리 FND를 시분할 구동(Multiplexing)하여 시각을 표시합니다[cite: 6, 16].
-
-### 2️⃣ 📏 스마트 센서 계측 (Smart Sensing)
-
-  * **초음파 거리 측정 (Ultrasonic):** HC-SR04 센서를 활용하여 물체와의 거리를 측정하고, 측정된 거리 데이터를 UART로 PC에 전송합니다.
-  * **온습도 모니터링 (Env Monitor):** DHT11 센서를 통해 주변 환경의 온도와 습도를 실시간으로 계측합니다.
-  * **실시간 모니터링:** 계측된 센서값은 FPGA 내부에서 ASCII 코드로 변환되어 터미널 프로그램에 텍스트로 출력됩니다.
-
-### 3️⃣ 📡 견고한 통신 시스템 (Robust Communication)
-
-  * [cite_start]**FIFO Buffering:** 송수신(Rx/Tx) 라인에 8-bit 원형 큐(FIFO)를 적용하여 데이터 유실 없는 안정적인 통신을 보장합니다[cite: 112, 177].
-  * [cite_start]**Command Decoder:** 수신된 ASCII 명령어를 해석하여 시스템의 상태(State)와 모드(Mode)를 제어합니다[cite: 182, 192].
-
------
-
-## 🛠️ 시스템 아키텍처 (System Architecture)
-
-시스템은 `Top Module`을 중심으로 센서부와 타이머부가 병렬로 구성되어 있으며, UART 모듈이 중앙에서 통신을 중개합니다.
-
-| 모듈 (Module) | 역할 (Role) | 상세 설명 |
-| :--- | :--- | :--- |
-| **watch\_stopwatch\_top** | 최상위 제어 | [cite_start]버튼 및 UART 입력을 통합하고, 기능별 모듈(시계/센서)을 활성화합니다[cite: 161]. |
-| **w\_sw\_uart\_top** | 통신 제어 | [cite_start]UART Rx/Tx, FIFO, Baud Rate 생성, 명령어 해석(Command Unit)을 담당합니다[cite: 175]. |
-| **clock\_top** | 타이머 로직 | [cite_start]시계(`watch`)와 스톱워치(`stopwatch`) 로직을 포함하며, FND 출력을 관리합니다[cite: 77]. |
-| **sensor\_top** | 센서 제어 | *(통합 예정)* HC-SR04 트리거 제어 및 Echo 펄스 계측, DHT11 프로토콜 처리. |
-| **fifo** | 데이터 버퍼 | [cite_start]비동기 데이터 처리를 위한 4-depth 원형 큐 메모리 구조입니다[cite: 112, 116]. |
-
------
-
-## 🎮 조작 방법 (Controls)
-
-시스템은 **UART 터미널 명령어**와 **보드 물리 버튼**을 동시에 지원합니다. (`sw[0]` Enable 필수)
-
-### 1\. UART 키보드 명령어 (PC Input)
-
-[cite_start]터미널(9600bps) 연결 후 아래 키를 입력하여 제어합니다[cite: 204].
-
-| Key (ASCII) | Hex | 기능 (Function) | 설명 |
-| :---: | :---: | :--- | :--- |
-| **M** | `0x4D` | **Mode Change** | 시계 ↔ 스톱워치 (또는 센서모드) 전환 |
-| **R** | `0x52` | **Run / Stop** | 스톱워치 시작 및 일시정지 |
-| **C** | `0x43` | **Clear** | 스톱워치 리셋 |
-| **h** | `0x68` | **Hour Up** | 시계 시간(Hour) 증가 |
-| **m** | `0x6D` | **Min Up** | 시계 분(Min) 증가 |
-| **s** | `0x73` | **Sec Up** | 시계 초(Sec) 증가 |
-
-### 2\. 물리 버튼 및 스위치 (Basys3 I/O)
-
-[cite_start]`.xdc` 파일 기준 핀 매핑입니다[cite: 97].
-
-  * **SW[0] (Enable):** 전체 시스템 전원 ON/OFF.
-  * **SW[1] (Mode):** 시계/스톱워치 모드 선택 토글.
-  * **Btn\_R:** 스톱워치 Run/Stop.
-  * **Btn\_L:** 스톱워치 Clear / 시계 Hour 설정.
-  * **Btn\_U/D:** 시계 Min/Sec 설정.
-
------
-
-## 💾 설치 및 실행 (Installation)
-
-1.  **하드웨어 연결:**
-      * Basys3 보드를 PC에 연결합니다.
-      * **HC-SR04 / DHT11** 센서를 지정된 Pmod 포트(JA/JB 등)에 연결합니다.
-2.  **Vivado 프로젝트:**
-      * 소스 코드(`.v`)와 제약 파일(`.xdc`)을 프로젝트에 추가합니다.
-3.  **합성 및 업로드:**
-      * Synthesis & Implementation 후 Bitstream을 생성하여 보드에 올립니다.
-4.  **터미널 접속:**
-      * TeraTerm 또는 PuTTY를 실행합니다.
-      * **Port:** 보드 포트, **Baud Rate:** 9600, **Data:** 8bit, **Parity:** None.
-
------
-
-\<div align="center"\>
-\<i\>Created with Verilog HDL on Xilinx Vivado\</i\>
-\</div\>
+```
+```
