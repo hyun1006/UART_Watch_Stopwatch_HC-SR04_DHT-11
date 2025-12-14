@@ -1,11 +1,3 @@
-네, 알겠습니다\! 말씀하신 대로 **발표 자료 버튼**을 상단에서 이동시켜, \*\*[4. 사용자 인터페이스]\*\*와 **[6. 디렉토리 구조]** 사이인 **5번 섹션**으로 배치했습니다.
-
-보통 프로젝트 문서에서 '상세 내용(발표 자료)'은 기능 설명이 끝난 뒤, 코드를 보기(디렉토리 구조) 직전에 배치하면 흐름이 자연스럽습니다.
-
-수정된 최종본입니다.
-
------
-
 # 📡 FPGA Integrated UART Control System: Watch, Stopwatch & Sensors
 
 \<div align="center"\>
@@ -137,6 +129,7 @@ PC 터미널(TeraTerm, PuTTY) 접속 정보: **Baud Rate 9600, Data 8-bit, Parit
 ## 📄 5. 프로젝트 발표 자료 (Project Presentation)
 
 프로젝트 발표 자료는 아래 버튼을 클릭하여 확인하실 수 있습니다.
+
 [![PDF Report](https://img.shields.io/badge/📄_PDF_Report-View_Document-FF0000?style=for-the-badge&logo=adobeacrobatreader&logoColor=white)](https://github.com/seokhyun-hwang/files/blob/main/UART_watch_stopwatch_HC-SR04_DHT-11.pdf)
 
 -----
