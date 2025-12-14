@@ -70,7 +70,7 @@
 
 프로젝트의 상세 설계 과정, 블록 다이어그램 및 시뮬레이션 결과는 아래 보고서에서 확인하실 수 있습니다.
 
-<div align="center">
+<div/>
 
 [![PDF Report](https://img.shields.io/badge/📄_PDF_Report-View_Document-FF0000?style=for-the-badge&logo=adobeacrobatreader&logoColor=white)](https://github.com/seokhyun-hwang/files/blob/main/UART_watch_stopwatch_HC-SR04_DHT-11.pdf)
 
@@ -117,5 +117,3 @@
 -----
 
 Copyright ⓒ 2025. SEOKHYUN HWANG. All rights reserved.
-
-```
